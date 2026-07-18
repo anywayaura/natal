@@ -16,6 +16,7 @@ from natal import (
     NAKSHATRA_LORDS,
     NAKSHATRA_LORDS_RU,
 )
+from varga_algorithms import calculate_varga, SIGN_NAMES
 
 # ---------------------------------------------------------------
 # Настройка
@@ -166,7 +167,7 @@ def build_md(result: dict, full_mode: bool) -> str:
         lines.append("## 📊 Варги (Divisional Charts)")
         lines.append("")
 
-        all_positions = {k: v for k, v in result["d1_positions"].items() if k != "Ketu"}
+        all_positions = dict(result["d1_positions"])
         all_positions["Lagna"] = result["lagna_abs"]
 
         for title, divisor, desc in VARGAS_MD:
@@ -176,18 +177,8 @@ def build_md(result: dict, full_mode: bool) -> str:
 
             chart = {}
             for name, abs_pos in all_positions.items():
-                div_long = (abs_pos * divisor) % 360
-                s = int(div_long // 30)
-                d = div_long % 30
-                chart[name] = {"sign_num": s, "degree": d}
-
-            # Кету = оппозиция варговой позиции Раху
-            rahu_div = chart["Rahu"]["degree"] + chart["Rahu"]["sign_num"] * 30
-            ketu_div = (rahu_div + 180) % 360
-            chart["Ketu"] = {
-                "sign_num": int(ketu_div // 30),
-                "degree": ketu_div % 30,
-            }
+                s, deg = calculate_varga(divisor, abs_pos)
+                chart[name] = {"sign_num": s, "degree": deg}
 
             lines.append(md_varga_table(chart))
             lines.append("")

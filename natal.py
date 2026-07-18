@@ -4,6 +4,8 @@ from geopy.geocoders import Nominatim
 from timezonefinder import TimezoneFinder
 import pytz
 
+from varga_algorithms import calculate_varga
+
 # ---------------------------------------------------------------
 # Константы
 # ---------------------------------------------------------------
@@ -169,8 +171,8 @@ def calculate(city: str, date_str: str, time_str: str, lat: float | None = None,
         d1[name] = pos
     result["d1_positions"] = d1
 
-    # Лагна
-    cusps, ascmc = swe.houses(jd, lat, lon, b"P")
+    # Лагна (сидерические дома)
+    cusps, ascmc = swe.houses_ex(jd, lat, lon, b"P", swe.FLG_SIDEREAL)
     lagna_abs = ascmc[0]
     result["lagna_abs"] = lagna_abs
     result["lagna_sign"] = int(lagna_abs // 30)
@@ -228,28 +230,16 @@ def calculate(city: str, date_str: str, time_str: str, lat: float | None = None,
     # а варговую позицию КЕТУ получаем как оппозицию УЖЕ ПОСЛЕ
     # деления на varga, а не до него.
 
-    all_positions = {k: v for k, v in d1.items() if k != "Ketu"}
+    all_positions = dict(d1)
     all_positions["Lagna"] = lagna_abs
 
     vargas_result = []
     for title, divisor, desc in VARGAS:
         chart = {}
         for name, abs_pos in all_positions.items():
-            div_long = (abs_pos * divisor) % 360
-            s = int(div_long // 30)
-            deg = div_long % 30
+            s, deg = calculate_varga(divisor, abs_pos)
+            div_long = s * 30 + deg
             chart[name] = {"sign_num": s, "degree": deg, "absolute": div_long}
-
-        # Кету = оппозиция варговой позиции Раху, посчитанная
-        # ПОСЛЕ применения divisor — так оппозиция 180° сохраняется
-        # для любого divisor, чётного или нечётного.
-        rahu_div_long = chart["Rahu"]["absolute"]
-        ketu_div_long = (rahu_div_long + 180) % 360
-        chart["Ketu"] = {
-            "sign_num": int(ketu_div_long // 30),
-            "degree": ketu_div_long % 30,
-            "absolute": ketu_div_long,
-        }
 
         vargas_result.append({
             "title": title,
