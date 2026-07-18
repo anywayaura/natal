@@ -7,7 +7,9 @@ import pytz
 # ---------------------------------------------------------------
 # Константы
 # ---------------------------------------------------------------
+
 PLANET_KEYS = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Rahu", "Ketu"]
+
 PLANET_IDS = {
     "Sun": swe.SUN,
     "Moon": swe.MOON,
@@ -64,18 +66,18 @@ DASHA_LENGTHS = {
 NAKSHATRA_LEN = 13.333333333333334
 
 VARGAS = [
-    ("D1  — Раши (Rasi)",          1,  "Тело, общая судьба"),
-    ("D2  — Хора (Hora)",          2,  "Богатство, финансы"),
-    ("D3  — Дреккана (Drekkana)",  3,  "Братья/сёстры, смелость"),
-    ("D4  — Чатуртхамша (Chaturthamsa)", 4,  "Недвижимость, удача"),
-    ("D5  — Панчамша (Panchamsa)", 5,  "Власть, слава, знания"),
-    ("D7  — Саптамша (Saptamsa)",  7,  "Дети, творчество"),
-    ("D8  — Аштамша (Ashtamsa)",   8,  "Препятствия, неожиданности"),
-    ("D9  — Навамша (Navamsa)",    9,  "Брак, партнёр, дхарма"),
-    ("D10 — Дашамша (Dasamsa)",   10,  "Карьера, профессия"),
+    ("D1 — Раши (Rasi)", 1, "Тело, общая судьба"),
+    ("D2 — Хора (Hora)", 2, "Богатство, финансы"),
+    ("D3 — Дреккана (Drekkana)", 3, "Братья/сёстры, смелость"),
+    ("D4 — Чатуртхамша (Chaturthamsa)", 4, "Недвижимость, удача"),
+    ("D5 — Панчамша (Panchamsa)", 5, "Власть, слава, знания"),
+    ("D7 — Саптамша (Saptamsa)", 7, "Дети, творчество"),
+    ("D8 — Аштамша (Ashtamsa)", 8, "Препятствия, неожиданности"),
+    ("D9 — Навамша (Navamsa)", 9, "Брак, партнёр, дхарма"),
+    ("D10 — Дашамша (Dasamsa)", 10, "Карьера, профессия"),
     ("D12 — Двадашамша (Dwadasamsa)", 12, "Родители, наследственность"),
     ("D16 — Шодашамша (Shodasamsa)", 16, "Комфорт, транспорт"),
-    ("D20 — Вимшамша (Vimsamsa)", 20,  "Духовность, аскетизм"),
+    ("D20 — Вимшамша (Vimsamsa)", 20, "Духовность, аскетизм"),
     ("D24 — Чатурвимшамша (Chaturvimsamsa)", 24, "Образование, знания"),
     ("D27 — Саптавимшамша (Saptavimsamsa)", 27, "Сильные стороны"),
     ("D30 — Тримшамша (Trimsamsa)", 30, "Негатив, трудности"),
@@ -84,10 +86,10 @@ VARGAS = [
     ("D60 — Шаштьямша (Shashtyamsa)", 60, "Кармический баланс"),
 ]
 
-
 # ---------------------------------------------------------------
 # Геокодирование и часовой пояс
 # ---------------------------------------------------------------
+
 def get_coords(city_name: str) -> tuple[float, float] | None:
     geolocator = Nominatim(user_agent="natal_chart_bot")
     location = geolocator.geocode(city_name)
@@ -104,6 +106,7 @@ def get_timezone_name(lat: float, lon: float) -> str | None:
 # ---------------------------------------------------------------
 # Основной расчёт
 # ---------------------------------------------------------------
+
 def calculate(city: str, date_str: str, time_str: str, lat: float | None = None, lon: float | None = None) -> dict:
     """Полный расчёт натальной карты.
 
@@ -207,8 +210,25 @@ def calculate(city: str, date_str: str, time_str: str, lat: float | None = None,
         idx = (idx + 1) % 9
     result["dasha_sequence"] = seq
 
+    # -------------------------------------------------------------
     # Варги
-    all_positions = dict(d1)
+    # -------------------------------------------------------------
+    # ВАЖНО (фикс бага Раху/Кету):
+    # Раньше Кету брался уже готовым из d1 (Rahu + 180) и просто
+    # умножался на divisor вместе со всеми планетами:
+    #     div_long = (abs_pos * divisor) % 360
+    # Для ЧЁТНЫХ divisor это давало 180*divisor % 360 == 0, то есть
+    # варговая позиция Кету схлопывалась в позицию Раху (D2, D4, D8,
+    # D10, D12, D16, D20, D24, D30, D40, D60 — все чётные, все были
+    # затронуты). Для нечётных divisor 180*divisor % 360 == 180,
+    # поэтому там (D1, D3, D5, D7, D9, D27, D45) узлы случайно
+    # оставались корректными — оппозиция сохранялась.
+    #
+    # Правильный порядок: сначала считаем варговую позицию РАХУ,
+    # а варговую позицию КЕТУ получаем как оппозицию УЖЕ ПОСЛЕ
+    # деления на varga, а не до него.
+
+    all_positions = {k: v for k, v in d1.items() if k != "Ketu"}
     all_positions["Lagna"] = lagna_abs
 
     vargas_result = []
@@ -217,8 +237,20 @@ def calculate(city: str, date_str: str, time_str: str, lat: float | None = None,
         for name, abs_pos in all_positions.items():
             div_long = (abs_pos * divisor) % 360
             s = int(div_long // 30)
-            d = div_long % 30
-            chart[name] = {"sign_num": s, "degree": d, "absolute": div_long}
+            deg = div_long % 30
+            chart[name] = {"sign_num": s, "degree": deg, "absolute": div_long}
+
+        # Кету = оппозиция варговой позиции Раху, посчитанная
+        # ПОСЛЕ применения divisor — так оппозиция 180° сохраняется
+        # для любого divisor, чётного или нечётного.
+        rahu_div_long = chart["Rahu"]["absolute"]
+        ketu_div_long = (rahu_div_long + 180) % 360
+        chart["Ketu"] = {
+            "sign_num": int(ketu_div_long // 30),
+            "degree": ketu_div_long % 30,
+            "absolute": ketu_div_long,
+        }
+
         vargas_result.append({
             "title": title,
             "divisor": divisor,
@@ -233,6 +265,7 @@ def calculate(city: str, date_str: str, time_str: str, lat: float | None = None,
 # ---------------------------------------------------------------
 # Форматирование для вывода
 # ---------------------------------------------------------------
+
 def format_planet_line(name: str, sign_num: int, degree: float, ru: bool = True) -> str:
     if name == "Lagna":
         label = "🌞 Лагна" if ru else "Lagna"
@@ -243,7 +276,6 @@ def format_planet_line(name: str, sign_num: int, degree: float, ru: bool = True)
             "Lagna": "🌞",
         }
         label = f"{planet_emoji.get(name, '')} {name}"
-
     signs = SIGN_NAMES_RU if ru else SIGN_NAMES
     return f"  {label:<16} {signs[sign_num]:<12} {degree:>6.2f}°"
 
@@ -258,19 +290,17 @@ def format_result(result: dict, ru: bool = True) -> str:
     lines.append(f"🗺 Часовой пояс: {result['tz_name']}")
     lines.append(f"📌 Координаты: {result['lat']:.4f}, {result['lon']:.4f}")
     lines.append("")
-
     lines.append("**── D1 — Раши-чакра ──**")
     lines.append("")
 
-    signs = SIGN_NAMES_RU if ru else SIGN_NAMES
     lines.append(format_planet_line("Lagna", result["lagna_sign"], result["lagna_degree"], ru))
     for name in PLANET_KEYS:
         pos = result["d1_positions"][name]
         s = int(pos // 30)
         d = pos % 30
         lines.append(format_planet_line(name, s, d, ru))
-
     lines.append("")
+
     nak_idx = result["nakshatra_index"]
     nak_name = NAKSHATRA_NAMES_RU[nak_idx] if ru else NAKSHATRAS[nak_idx]
     lord_ru = NAKSHATRA_LORDS_RU[NAKSHATRA_LORDS.index(result["moon_lord"])] if ru else result["moon_lord"]
@@ -284,10 +314,9 @@ def format_result(result: dict, ru: bool = True) -> str:
         if start.year <= 2030:
             lord_label = NAKSHATRA_LORDS_RU[NAKSHATRA_LORDS.index(lord)] if ru else lord
             lines.append(f"  {lord_label:<12} {start.strftime('%d.%m.%Y')} — {end.strftime('%d.%m.%Y')}")
-
     lines.append("")
-    lines.append("**── Варги (Divisional Charts) ──**")
 
+    lines.append("**── Варги (Divisional Charts) ──**")
     for v in result["vargas"]:
         lines.append("")
         lines.append(f"**{v['title']}** — {v['description']}")
@@ -305,15 +334,14 @@ def format_short_result(result: dict, ru: bool = True) -> str:
     lines.append(f"📍 {result['city']}, {result['birth_local'].strftime('%d.%m.%Y %H:%M')}")
     lines.append("")
 
-    signs = SIGN_NAMES_RU if ru else SIGN_NAMES
     lines.append(format_planet_line("Lagna", result["lagna_sign"], result["lagna_degree"], ru))
     for name in PLANET_KEYS:
         pos = result["d1_positions"][name]
         s = int(pos // 30)
         d = pos % 30
         lines.append(format_planet_line(name, s, d, ru))
-
     lines.append("")
+
     nak_idx = result["nakshatra_index"]
     nak_name = NAKSHATRA_NAMES_RU[nak_idx] if ru else NAKSHATRAS[nak_idx]
     lord_ru = NAKSHATRA_LORDS_RU[NAKSHATRA_LORDS.index(result["moon_lord"])] if ru else result["moon_lord"]
