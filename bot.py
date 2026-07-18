@@ -166,7 +166,7 @@ def build_md(result: dict, full_mode: bool) -> str:
         lines.append("## 📊 Варги (Divisional Charts)")
         lines.append("")
 
-        all_positions = dict(result["d1_positions"])
+        all_positions = {k: v for k, v in result["d1_positions"].items() if k != "Ketu"}
         all_positions["Lagna"] = result["lagna_abs"]
 
         for title, divisor, desc in VARGAS_MD:
@@ -180,6 +180,15 @@ def build_md(result: dict, full_mode: bool) -> str:
                 s = int(div_long // 30)
                 d = div_long % 30
                 chart[name] = {"sign_num": s, "degree": d}
+
+            # Кету = оппозиция варговой позиции Раху
+            rahu_div = chart["Rahu"]["degree"] + chart["Rahu"]["sign_num"] * 30
+            ketu_div = (rahu_div + 180) % 360
+            chart["Ketu"] = {
+                "sign_num": int(ketu_div // 30),
+                "degree": ketu_div % 30,
+            }
+
             lines.append(md_varga_table(chart))
             lines.append("")
 
